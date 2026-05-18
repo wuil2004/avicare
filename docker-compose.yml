@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  avicare-mongo:
+    image: mongo:6.0  # <-- CAMBIO AQUÍ: Versión súper estable
+    container_name: avicare-mongo
+    ports:
+      - "27018:27017"
+    volumes:
+      - avicare_mongo_data:/data/db
+
+  avicare-backend:
+    build: ./backend
+    container_name: avicare-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    environment:
+      - MONGO_URI=mongodb://avicare-mongo:27017/avicare
+      - PORT=5000
+      - GEMINI_API_KEY=AIzaSyDkiS4HWVw2BqIGEJnmKbMYUpnBQGqGiqI
+      - CLOUDINARY_CLOUD_NAME=dczoyxm7p
+      - CLOUDINARY_API_KEY=129166315569372
+      - CLOUDINARY_API_SECRET=odU3g1p6k3tW4xFHkMIvO6upeoo
+    depends_on:
+      - avicare-mongo
+    command: npm run dev
+
+volumes:
+  avicare_mongo_data:
