@@ -52,3 +52,12 @@ exports.completeTask = async (req, res) => {
     res.status(500).json({ error: 'Fallo al completar la tarea', detalle: error.message });
   }
 };
+
+exports.deleteTask = async (req, res) => {
+  try {
+    await Task.findByIdAndDelete(req.params.id);
+    res.status(200).json({ mensaje: 'Tarea eliminada de la agenda. 🗑️' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar tarea', detalle: error.message });
+  }
+};
