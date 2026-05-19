@@ -5,24 +5,27 @@ exports.createNest = async (req, res) => {
   try {
     const { cageId, motherId, fatherId, layDate, eggCount } = req.body;
     
-    // Matemática de fechas: sumamos 14 días (estándar canarios) a la fecha de puesta
     const hatchDate = new Date(layDate);
     hatchDate.setDate(hatchDate.getDate() + 14);
 
-    const newNest = new Nest({ cage: cageId, mother: motherId, father: fatherId, layDate, hatchDate, eggCount });
+    const newNest = new Nest({ 
+      cage: cageId, mother: motherId, father: fatherId, layDate, hatchDate, eggCount,
+      user: req.user.userId // <-- Amarrado al usuario
+    });
     const savedNest = await newNest.save();
 
-    // 🤖 AUTOMATIZACIÓN: Creamos una alerta en la agenda para el día del nacimiento
+    // La tarea automatizada se genera en la cuenta del mismo usuario
     const alertTask = new Task({
       title: `¡Nacimiento esperado! (${eggCount} huevos)`,
       description: `Revisar nido. Los pichones deberían estar naciendo hoy.`,
       dueDate: hatchDate,
-      cage: cageId
+      cage: cageId,
+      user: req.user.userId // <-- Amarrado automáticamente al usuario
     });
     await alertTask.save();
 
     res.status(201).json({ 
-      mensaje: 'Nido registrado. Alerta de nacimiento programada automáticamente en la agenda. 🥚', 
+      mensaje: 'Nido registrado y alerta vinculada a tu cuenta con éxito. 🥚', 
       nest: savedNest 
     });
   } catch (error) {

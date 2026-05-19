@@ -4,34 +4,28 @@ const Cage = require('../models/Cage');
 exports.createBird = async (req, res) => {
   try {
     const { ringNumber, species, gender, cageId } = req.body;
-    const photo = req.file ? req.file.path : null; // Atrapamos la URL de Cloudinary
+    const photo = req.file ? req.file.path : null;
 
-    // SISTEMA ANTI-PELEAS 🛡️
+    // Control Anti-Peleas (Buscando la jaula del mismo usuario)
     if (cageId) {
-      const cage = await Cage.findById(cageId).populate('birds');
-      if (cage && cage.birds.length > 0) {
-        const especieExistente = cage.birds[0].species;
-        // Si la especie que ya vive ahí es diferente a la nueva, bloqueamos la acción
-        if (especieExistente !== species) {
-          return res.status(400).json({ 
-            error: `¡Alto ahí! No puedes mezclar un ${species} en la misma jaula donde ya hay un ${especieExistente}.` 
-          });
-        }
+      const cage = await Cage.findOne({ _id: cageId, user: req.user.userId }).populate('birds');
+      if (!cage) return res.status(404).json({ error: 'La jaula especificada no existe.' });
+      
+      if (cage.birds.length > 0 && cage.birds[0].species !== species) {
+        return res.status(400).json({ 
+          error: `¡Alto ahí! No puedes mezclar un ${species} en la misma jaula donde ya hay un ${cage.birds[0].species}.` 
+        });
       }
     }
 
-    // Si pasó la seguridad, creamos el ave
     const newBird = new Bird({
-      ringNumber,
-      species,
-      gender,
-      photo,
-      cage: cageId || null
+      ringNumber, species, gender, photo,
+      cage: cageId || null,
+      user: req.user.userId // <-- Guardamos al dueño
     });
 
     const savedBird = await newBird.save();
 
-    // Metemos el ID del ave en la jaula
     if (cageId) {
       await Cage.findByIdAndUpdate(cageId, { $push: { birds: savedBird._id } });
     }
@@ -42,27 +36,39 @@ exports.createBird = async (req, res) => {
   }
 };
 
-// Editar datos de un ave
+// Obtener solo las aves del usuario logueado
+exports.getBirds = async (req, res) => {
+  try {
+    const birds = await Bird.find({ user: req.user.userId }).populate('cage');
+    res.status(200).json(birds);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener aves', detalle: error.message });
+  }
+};
+
 exports.updateBird = async (req, res) => {
   try {
-    const { ringNumber, species, gender, status } = req.body;
-    const updateData = { ringNumber, species, gender, status };
-    if (req.file) updateData.photo = req.file.path; // Si sube nueva foto
+    const { ringNumber, species, gender } = req.body;
+    const updateData = { ringNumber, species, gender };
+    if (req.file) updateData.photo = req.file.path;
 
-    const updatedBird = await Bird.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    const updatedBird = await Bird.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.userId },
+      updateData,
+      { new: true }
+    );
+    if (!updatedBird) return res.status(404).json({ error: 'Ave no encontrada o no autorizada' });
     res.status(200).json({ mensaje: '¡Expediente de ave actualizado! 📝', bird: updatedBird });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar ave', detalle: error.message });
   }
 };
 
-// Eliminar un ave (Y sacarla de la jaula donde vivía)
 exports.deleteBird = async (req, res) => {
   try {
-    const bird = await Bird.findById(req.params.id);
+    const bird = await Bird.findOne({ _id: req.params.id, user: req.user.userId });
     if (!bird) return res.status(404).json({ error: 'Ave no encontrada' });
 
-    // Si estaba en una jaula, la sacamos de la lista de esa jaula
     if (bird.cage) {
       await Cage.findByIdAndUpdate(bird.cage, { $pull: { birds: bird._id } });
     }
@@ -74,33 +80,29 @@ exports.deleteBird = async (req, res) => {
   }
 };
 
-// Mudar un ave de jaula (Con validación anti-peleas) 🔄
 exports.moveBird = async (req, res) => {
   try {
     const { newCageId } = req.body;
-    const bird = await Bird.findById(req.params.id);
+    const bird = await Bird.findOne({ _id: req.params.id, user: req.user.userId });
     if (!bird) return res.status(404).json({ error: 'Ave no encontrada' });
 
     if (newCageId) {
-      const newCage = await Cage.findById(newCageId).populate('birds');
-      // Validar si la nueva jaula tiene una especie diferente
-      if (newCage && newCage.birds.length > 0 && newCage.birds[0].species !== bird.species) {
+      const newCage = await Cage.findOne({ _id: newCageId, user: req.user.userId }).populate('birds');
+      if (!newCage) return res.status(404).json({ error: 'La jaula de destino no existe.' });
+      if (newCage.birds.length > 0 && newCage.birds[0].species !== bird.species) {
         return res.status(400).json({ 
           error: `¡Incompatibilidad! No puedes mudar este ${bird.species} a una jaula con ${newCage.birds[0].species}.` 
         });
       }
     }
 
-    // 1. Quitar de la jaula vieja
     if (bird.cage) {
       await Cage.findByIdAndUpdate(bird.cage, { $pull: { birds: bird._id } });
     }
 
-    // 2. Asignar la nueva jaula en el ave
     bird.cage = newCageId || null;
     await bird.save();
 
-    // 3. Meter en la jaula nueva
     if (newCageId) {
       await Cage.findByIdAndUpdate(newCageId, { $push: { birds: bird._id } });
     }
